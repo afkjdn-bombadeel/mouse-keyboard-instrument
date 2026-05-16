@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mouse and Keyboard Instrument</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="app-shell" data-testid="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <h1>Mouse &amp; Keyboard Instrument</h1>
+        </div>
+        <div class="topbar-actions">
+          <button id="armAudio" class="icon-button text-button" type="button">Arm Audio</button>
+          <span id="audioStatus" class="status-pill" data-state="idle">silent</span>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="Instrument workspace">
+        <div id="stage" class="instrument-stage" tabindex="0" aria-label="Mouse and keyboard instrument stage">
+          <canvas id="stageCanvas" class="stage-canvas" aria-hidden="true"></canvas>
+          <div id="keyLayer" class="key-layer" aria-hidden="true"></div>
+          <div id="cursorProbe" class="cursor-probe" aria-hidden="true"></div>
+        </div>
+
+        <aside class="control-panel" aria-label="Configuration">
+          <div class="panel-section">
+            <h2>Modifiers</h2>
+            <label class="select-row">
+              <span>Shift</span>
+              <select id="shiftEffect">
+                <option value="octave-up">Octave up</option>
+                <option value="fifth">Fifth harmony</option>
+                <option value="filter">Filter sweep</option>
+                <option value="tremolo">Tremolo</option>
+                <option value="delay">Delay bloom</option>
+                <option value="dampen">Dampen</option>
+              </select>
+            </label>
+            <label class="select-row">
+              <span>Ctrl</span>
+              <select id="controlEffect">
+                <option value="filter">Filter sweep</option>
+                <option value="octave-down">Octave down</option>
+                <option value="fifth">Fifth harmony</option>
+                <option value="tremolo">Tremolo</option>
+                <option value="delay">Delay bloom</option>
+                <option value="dampen">Dampen</option>
+              </select>
+            </label>
+            <label class="select-row">
+              <span>Alt</span>
+              <select id="altEffect">
+                <option value="fifth">Fifth harmony</option>
+                <option value="delay">Delay bloom</option>
+                <option value="tremolo">Tremolo</option>
+                <option value="filter">Filter sweep</option>
+                <option value="octave-up">Octave up</option>
+                <option value="dampen">Dampen</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="panel-section">
+            <h2>Pitch</h2>
+            <label class="select-row">
+              <span>Scale</span>
+              <select id="scaleSelect">
+                <option value="pentatonic">Minor pentatonic</option>
+                <option value="chromatic">Chromatic</option>
+                <option value="minor">Natural minor</option>
+                <option value="whole">Whole tone</option>
+              </select>
+            </label>
+            <label class="range-row">
+              <span>Cursor range</span>
+              <input id="pitchRange" type="range" min="2" max="24" step="1" value="12">
+              <output id="pitchRangeOut">+/-12 st</output>
+            </label>
+            <label class="range-row">
+              <span>Bend range</span>
+              <input id="bendRange" type="range" min="1" max="24" step="1" value="12">
+              <output id="bendRangeOut">+/-12 st</output>
+            </label>
+            <label class="range-row">
+              <span>Bend response</span>
+              <input id="bendResponse" type="range" min="10" max="100" step="5" value="55">
+              <output id="bendResponseOut">55%</output>
+            </label>
+          </div>
+
+          <div class="panel-section">
+            <h2>Sustain</h2>
+            <label class="toggle-row">
+              <span>Held key tone</span>
+              <input id="keybedTone" type="checkbox" checked>
+            </label>
+            <label class="toggle-row">
+              <span>Right hum bends</span>
+              <input id="rightHumFollowsBend" type="checkbox">
+            </label>
+            <label class="range-row">
+              <span>Release</span>
+              <input id="releaseTime" type="range" min="0.1" max="4" step="0.1" value="1.4">
+              <output id="releaseTimeOut">1.4s</output>
+            </label>
+          </div>
+
+          <div class="panel-section">
+            <h2>Visuals</h2>
+            <label class="toggle-row">
+              <span>String waves</span>
+              <input id="showWaves" type="checkbox" checked>
+            </label>
+            <label class="toggle-row">
+              <span>Inactive keys</span>
+              <input id="showInactive" type="checkbox" checked>
+            </label>
+            <label class="toggle-row">
+              <span>Latch keys</span>
+              <input id="latchKeys" type="checkbox">
+            </label>
+            <label class="range-row">
+              <span>Glow</span>
+              <input id="glowIntensity" type="range" min="10" max="100" step="5" value="62">
+              <output id="glowIntensityOut">62%</output>
+            </label>
+          </div>
+        </aside>
+      </section>
+
+      <footer class="debug-strip" aria-label="Debug state">
+        <div class="debug-tile">
+          <span class="debug-label">Held keys</span>
+          <strong id="debugHeld">none</strong>
+        </div>
+        <div class="debug-tile">
+          <span class="debug-label">Cursor</span>
+          <strong id="debugCursor">x: 0 y: 0</strong>
+        </div>
+        <div class="debug-tile wide">
+          <span class="debug-label">Active notes</span>
+          <strong id="debugNotes">silent</strong>
+        </div>
+        <div class="debug-tile">
+          <span class="debug-label">State</span>
+          <strong id="debugState">idle</strong>
+        </div>
+        <div class="debug-log">
+          <div class="debug-log-head">
+            <span>Log</span>
+            <button id="clearLog" type="button">Clear</button>
+          </div>
+          <ol id="debugLog" aria-live="polite"></ol>
+        </div>
+      </footer>
+    </main>
+
+    <script src="./instrument-core.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "mouse-keyboard-instrument",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local mouse and keyboard musical instrument prototype.",
+  "scripts": {
+    "test": "node tests/instrument-core.test.mjs"
+  }
+}
