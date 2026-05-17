@@ -22,3 +22,7 @@ npm test
 ```
 
 The app also exposes `window.MKI_TEST` for browser-driven QA.
+
+## License
+
+GPL-3.0-only. See [LICENSE](./LICENSE).
