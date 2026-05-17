@@ -10,10 +10,10 @@ Open `index.html` in a browser, then press **Arm Audio** once so the Web Audio g
 
 - Hold one or more QWERTY letter keys to define notes or strings.
 - Move the cursor vertically for pitch and horizontally/along strings for note blend.
-- Scroll to pluck. Repeated scrolls bow the current note/string.
-- Left-click and hold to sustain the current note. Drag in any direction to bend it.
+- Scroll wheel movement bows the current note/string across a finite 30-tick bow.
+- Click to pluck at the current string location. Click and hold to set a bend for the next pluck or bow, then drag in any direction to bend it.
 - Right-click and hold to hum from the original click point.
-- Use the side panel to change modifier effects, bend range, pitch scale, sustain, and visual debug options.
+- Use the side panel to change instrument sound, modifier effects, bend range, pitch scale, sustain, and visual debug options.
 
 ## Test
 

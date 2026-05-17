@@ -147,7 +147,7 @@
     return best;
   }
 
-  function normalizeWeights(weights) {
+  function normalizeWeights(weights, options = {}) {
     const totals = new Map();
     for (const entry of weights) {
       if (!entry || !entry.key || entry.weight <= 0) continue;
@@ -159,9 +159,23 @@
         role: role || "anchor"
       });
     }
-    const total = Array.from(totals.values()).reduce((sum, entry) => sum + entry.weight, 0) || 1;
-    return Array.from(totals.values())
-      .map((entry) => ({ ...entry, weight: entry.weight / total }))
+    const normalized = Array.from(totals.values());
+    const total = normalized.reduce((sum, entry) => sum + entry.weight, 0) || 1;
+    const anchorFloor = options.anchorFloor || 0;
+    const withFloors = normalized.map((entry) => ({
+      ...entry,
+      weight: entry.weight / total
+    }));
+    const anchors = withFloors.filter((entry) => entry.role === "anchor");
+    const floored = anchorFloor > 0 && anchors.length > 1
+      ? withFloors.map((entry) => ({
+        ...entry,
+        weight: entry.role === "anchor" ? Math.max(anchorFloor, entry.weight) : entry.weight
+      }))
+      : withFloors;
+    const flooredTotal = floored.reduce((sum, entry) => sum + entry.weight, 0) || 1;
+    return floored
+      .map((entry) => ({ ...entry, weight: entry.weight / flooredTotal }))
       .filter((entry) => entry.weight >= 0.015)
       .sort((a, b) => b.weight - a.weight);
   }
@@ -225,12 +239,12 @@
       const b = layout.nodes[nearest.edge.b];
       const t = nearest.projection.t;
       const weights = [
-        { key: a.key, weight: 1 - t, role: "anchor" },
-        { key: b.key, weight: t, role: "anchor" },
+        { key: a.key, weight: Math.max(0.001, 1 - t), role: "anchor" },
+        { key: b.key, weight: Math.max(0.001, t), role: "anchor" },
         ...sameRowSpanResonance(a, b, t)
       ];
       return {
-        weights: normalizeWeights(weights),
+        weights: normalizeWeights(weights, { anchorFloor: 0.08 }),
         activeEdge: { ...nearest, a, b },
         mode: sameRow ? "span" : "bridge",
         relation: `${a.key}-${b.key}`
@@ -241,7 +255,7 @@
       const sorted = nodes.slice().sort((a, b) => a.x - b.x);
       const weights = rowChordWeights(cursor, sorted);
       return {
-        weights: normalizeWeights(weights),
+        weights: normalizeWeights(weights, { anchorFloor: 0.08 }),
         activeEdge: nearest ? { ...nearest, a: layout.nodes[nearest.edge.a], b: layout.nodes[nearest.edge.b] } : null,
         mode: "row-chord",
         relation: sorted.map((node) => node.key).join("-")
@@ -254,9 +268,9 @@
       const t = nearest.projection.t;
       return {
         weights: normalizeWeights([
-          { key: a.key, weight: 1 - t, role: "anchor" },
-          { key: b.key, weight: t, role: "anchor" }
-        ]),
+          { key: a.key, weight: Math.max(0.001, 1 - t), role: "anchor" },
+          { key: b.key, weight: Math.max(0.001, t), role: "anchor" }
+        ], { anchorFloor: 0.08 }),
         activeEdge: { ...nearest, a, b },
         mode: "mesh-edge",
         relation: `${a.key}-${b.key}`
@@ -264,7 +278,7 @@
     }
 
     return {
-      weights: normalizeWeights(inverseDistanceWeights(cursor, nodes)),
+      weights: normalizeWeights(inverseDistanceWeights(cursor, nodes), { anchorFloor: 0.08 }),
       activeEdge: nearest ? { ...nearest, a: layout.nodes[nearest.edge.a], b: layout.nodes[nearest.edge.b] } : null,
       mode: "mesh-field",
       relation: nodes.map((node) => node.key).join("-")
@@ -347,6 +361,78 @@
     };
   }
 
+  function scrollSpeedFromDelta(deltaY, elapsed, options = {}) {
+    const delta = Math.abs(deltaY || 0);
+    const elapsedMs = Number.isFinite(elapsed) && elapsed > 0 ? elapsed : null;
+    const minElapsed = options.minElapsed || 18;
+    const speedScale = options.speedScale || 3.2;
+    const wheelScale = options.wheelScale || 120;
+    const distanceSpeed = delta / wheelScale;
+    const velocitySpeed = elapsedMs ? (delta / Math.max(minElapsed, elapsedMs)) / speedScale : 0;
+    const rawSpeed = clamp(Math.max(distanceSpeed, velocitySpeed), 0, 1);
+    return clamp(Math.pow(rawSpeed, 0.52), 0, 1);
+  }
+
+  function computeBowTimbre(options = {}) {
+    const direction = options.direction < 0 ? -1 : options.direction > 0 ? 1 : 0;
+    const bowPosition = clamp(Number.isFinite(options.bowPosition) ? options.bowPosition : 0.5, 0, 1);
+    const bowSpeed = clamp(Number.isFinite(options.bowSpeed) ? options.bowSpeed : 0, 0, 1);
+    const endTension = Math.pow(Math.abs(bowPosition - 0.5) * 2, 1.2);
+    const middleWarmth = Math.sin(bowPosition * Math.PI);
+    const rosin = Math.sin(bowPosition * Math.PI * 4) * 0.5 + 0.5;
+    const attack = clamp(Math.pow(bowSpeed, 0.5) * (0.72 + endTension * 0.45), 0, 1);
+    const pressure = clamp(0.18 + bowSpeed * 0.78, 0, 1);
+    const directionBrightness = direction * (0.045 + bowSpeed * 0.045);
+
+    return {
+      direction,
+      bowPosition,
+      bowSpeed,
+      endTension,
+      middleWarmth,
+      rosin,
+      attack,
+      pressure,
+      frequencySkew: direction * (0.00035 + pressure * 0.0009 + endTension * 0.00055),
+      filterMultiplier: clamp(0.92 + pressure * 0.06 + directionBrightness * 0.55 + endTension * 0.07 - middleWarmth * 0.03, 0.78, 1.14),
+      brightnessHz: endTension * 240 + attack * 260 + pressure * 220 + rosin * 80 - middleWarmth * 90,
+      overtoneScale: clamp(0.86 + direction * 0.025 + attack * 0.08 + pressure * 0.08 + endTension * 0.05, 0.74, 1.18),
+      gainScale: clamp(0.72 + pressure * 0.32 + endTension * 0.22 + middleWarmth * 0.08 + attack * 0.22, 0.58, 1.58),
+      attackTime: clamp(0.16 - attack * 0.12, 0.028, 0.16),
+      bowFlutterDepth: clamp(pressure * 0.00045 + attack * 0.00035, 0, 0.0008),
+      bowFlutterRate: 36 + pressure * 24
+    };
+  }
+
+  function classifyScrollGesture(previous, current) {
+    const lastDirection = previous && previous.lastDirection ? previous.lastDirection : 0;
+    const lastAt = previous && Number.isFinite(previous.lastAt) ? previous.lastAt : -Infinity;
+    const direction = current.deltaY < 0 ? -1 : 1;
+    const now = Number.isFinite(current.now) ? current.now : 0;
+    const continuationMs = current.continuationMs || 1000;
+    const strokeSteps = current.strokeSteps || 30;
+    const previousPosition = previous && Number.isFinite(previous.bowPosition) ? previous.bowPosition : 0.5;
+    const elapsed = now - lastAt;
+    const isContinuation = lastDirection === direction && elapsed >= 0 && elapsed <= continuationMs;
+    const speed = scrollSpeedFromDelta(current.deltaY, elapsed, current);
+    const rawBowPosition = clamp(previousPosition + direction / strokeSteps, 0, 1);
+    const bowPosition = rawBowPosition <= 0.000001 ? 0 : rawBowPosition >= 0.999999 ? 1 : rawBowPosition;
+    const timbre = computeBowTimbre({ direction, bowPosition, bowSpeed: speed });
+    return {
+      direction,
+      gesture: isContinuation ? "bow" : "pluck",
+      elapsed,
+      isContinuation,
+      speed,
+      bowSpeed: speed,
+      bowPosition,
+      bowAttack: timbre.attack,
+      strokeSteps,
+      strokeIndex: Math.round(bowPosition * strokeSteps),
+      timbre
+    };
+  }
+
   function computeModel(input) {
     const config = input.config || {};
     const layout = input.layout;
@@ -407,6 +493,9 @@
     buildEdges,
     projectPointToSegment,
     nearestEdge,
+    scrollSpeedFromDelta,
+    computeBowTimbre,
+    classifyScrollGesture,
     computeModel,
     formatNotes
   };

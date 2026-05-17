@@ -1,13 +1,13 @@
 :root {
   color-scheme: dark;
-  --bg: #070b0f;
-  --surface: #0d1318;
-  --surface-2: #111a21;
-  --line: rgba(145, 177, 190, 0.18);
+  --bg: #000010;
+  --surface: #030318;
+  --surface-2: #060721;
+  --line: rgba(185, 216, 255, 0.16);
   --text: #e8f2f5;
-  --muted: #87949d;
-  --accent: #62dfff;
-  --accent-2: #88f1ff;
+  --muted: #8f9abb;
+  --accent: #73e6ff;
+  --accent-2: #d9fbff;
   --good: #82f6a7;
   --warning: #ffd173;
   --radius: 8px;
@@ -43,9 +43,7 @@ input {
   width: 100vw;
   height: 100vh;
   min-width: 860px;
-  background:
-    radial-gradient(circle at 46% 56%, rgba(60, 170, 205, 0.08), transparent 36%),
-    linear-gradient(180deg, #090e13 0%, #06090d 100%);
+  background: #000010;
 }
 
 .topbar {
@@ -54,7 +52,7 @@ input {
   justify-content: space-between;
   border-bottom: 1px solid var(--line);
   padding: 0 22px 0 28px;
-  background: rgba(8, 12, 16, 0.82);
+  background: rgba(0, 0, 16, 0.94);
   backdrop-filter: blur(18px);
 }
 
@@ -140,6 +138,7 @@ h2 {
   position: relative;
   min-height: 0;
   overflow: hidden;
+  background: #000010;
   outline: none;
   cursor: crosshair;
   touch-action: none;
@@ -168,28 +167,68 @@ h2 {
 .key-node {
   --weight: 0;
   position: absolute;
+  isolation: isolate;
   display: grid;
   width: 56px;
   height: 56px;
   place-items: center;
   padding: 0;
-  border: 1px solid rgba(150, 174, 185, 0.32);
+  border: 1px solid rgba(221, 248, 255, 0.34);
   border-radius: 50%;
-  background: rgba(14, 21, 27, 0.54);
-  color: #b8c8ce;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.055) 38%, rgba(68, 225, 255, 0.075) 100%),
+    rgba(7, 12, 44, 0.34);
+  color: #d9f6ff;
+  box-shadow:
+    0 18px 34px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(105, 227, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.52),
+    inset 8px 10px 18px rgba(255, 255, 255, 0.08),
+    inset -10px -14px 22px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
   transform: translate(-50%, -50%);
   pointer-events: auto;
-  transition: border-color 130ms ease, color 130ms ease, opacity 130ms ease, box-shadow 130ms ease, background 130ms ease;
+  transition: border-color 130ms ease, color 130ms ease, opacity 130ms ease, box-shadow 130ms ease, background 130ms ease, transform 130ms ease;
+}
+
+.key-node::before,
+.key-node::after {
+  position: absolute;
+  z-index: -1;
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+}
+
+.key-node::before {
+  inset: 4px 8px 26px 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0));
+  filter: blur(0.5px);
+  opacity: 0.54;
+}
+
+.key-node::after {
+  inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset -8px -12px 20px rgba(46, 102, 255, 0.12),
+    inset 6px 8px 16px rgba(255, 255, 255, 0.08);
+  opacity: 0.84;
 }
 
 .key-node span {
+  position: relative;
   margin-top: 3px;
   font-size: 19px;
+  font-weight: 520;
   line-height: 1;
+  text-shadow: 0 1px 8px rgba(115, 230, 255, 0.34);
 }
 
 .key-node small {
-  color: rgba(156, 176, 184, 0.66);
+  position: relative;
+  color: rgba(218, 246, 255, 0.68);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 9px;
   line-height: 1;
@@ -197,12 +236,19 @@ h2 {
 
 .key-node.held,
 .key-node.weighted {
-  border-color: rgba(122, 231, 255, 0.85);
-  background: rgba(46, 184, 230, calc(0.10 + var(--weight) * 0.13));
+  border-color: rgba(224, 253, 255, 0.86);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.36), rgba(180, 250, 255, calc(0.10 + var(--weight) * 0.16)) 42%, rgba(83, 222, 255, calc(0.16 + var(--weight) * 0.26)) 100%),
+    rgba(10, 22, 62, 0.48);
   color: #effcff;
   box-shadow:
-    0 0 calc(18px + var(--weight) * 18px) rgba(98, 223, 255, calc(0.18 + var(--weight) * 0.42)),
-    inset 0 0 18px rgba(98, 223, 255, calc(0.08 + var(--weight) * 0.15));
+    0 18px 36px rgba(0, 0, 0, 0.36),
+    0 0 calc(20px + var(--weight) * 26px) rgba(92, 225, 255, calc(0.24 + var(--weight) * 0.52)),
+    0 0 0 1px rgba(220, 252, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.74),
+    inset 0 0 24px rgba(111, 231, 255, calc(0.16 + var(--weight) * 0.22)),
+    inset -12px -16px 26px rgba(0, 0, 0, 0.24);
+  transform: translate(-50%, -50%) scale(calc(1 + var(--weight) * 0.035));
 }
 
 .key-node.held small,
@@ -235,7 +281,7 @@ h2 {
   overflow: auto;
   border-left: 1px solid var(--line);
   padding: 30px 20px;
-  background: rgba(12, 18, 23, 0.82);
+  background: #000010;
 }
 
 .panel-section {
@@ -309,7 +355,7 @@ output {
   display: grid;
   grid-template-columns: 168px 184px minmax(250px, 1fr) 230px minmax(270px, 0.9fr);
   border-top: 1px solid var(--line);
-  background: rgba(7, 11, 15, 0.94);
+  background: #000010;
 }
 
 .debug-tile,

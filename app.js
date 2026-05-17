@@ -19,6 +19,7 @@
     shiftEffect: document.getElementById("shiftEffect"),
     controlEffect: document.getElementById("controlEffect"),
     altEffect: document.getElementById("altEffect"),
+    instrumentSelect: document.getElementById("instrumentSelect"),
     scaleSelect: document.getElementById("scaleSelect"),
     pitchRange: document.getElementById("pitchRange"),
     bendRange: document.getElementById("bendRange"),
@@ -40,13 +41,109 @@
     glowIntensity: document.getElementById("glowIntensityOut")
   };
 
+  const BOW_CONTINUATION_MS = 1000;
+
+  const INSTRUMENT_PRESETS = {
+    electric: {
+      label: "Electric sine",
+      osc: "sine",
+      overtone: "triangle",
+      overtoneRatio: 2,
+      overtoneGain: 0.045,
+      filterType: "lowpass",
+      filterBase: 2400,
+      filterQ: 0.8,
+      continuousGain: 1,
+      pluckGain: 1,
+      pluckDecay: 0.7,
+      pluckFilterRatio: 2.5,
+      bowWave: "triangle"
+    },
+    piano: {
+      label: "Piano",
+      osc: "triangle",
+      overtone: "sine",
+      overtoneRatio: 3,
+      overtoneGain: 0.075,
+      filterType: "lowpass",
+      filterBase: 3600,
+      filterQ: 1.1,
+      continuousGain: 0.72,
+      pluckGain: 1.18,
+      pluckDecay: 1.25,
+      pluckFilterRatio: 4.2,
+      bowWave: "triangle"
+    },
+    guitar: {
+      label: "Guitar",
+      osc: "sawtooth",
+      overtone: "triangle",
+      overtoneRatio: 2,
+      overtoneGain: 0.035,
+      filterType: "bandpass",
+      filterBase: 1850,
+      filterQ: 2.2,
+      continuousGain: 0.58,
+      pluckGain: 1.08,
+      pluckDecay: 0.92,
+      pluckFilterRatio: 2.2,
+      bowWave: "sawtooth"
+    },
+    nylon: {
+      label: "Nylon guitar",
+      osc: "triangle",
+      overtone: "sine",
+      overtoneRatio: 2,
+      overtoneGain: 0.055,
+      filterType: "lowpass",
+      filterBase: 2100,
+      filterQ: 1.35,
+      continuousGain: 0.62,
+      pluckGain: 0.95,
+      pluckDecay: 0.82,
+      pluckFilterRatio: 2.0,
+      bowWave: "triangle"
+    },
+    strings: {
+      label: "Strings",
+      osc: "sawtooth",
+      overtone: "triangle",
+      overtoneRatio: 2,
+      overtoneGain: 0.05,
+      filterType: "lowpass",
+      filterBase: 1650,
+      filterQ: 1.65,
+      continuousGain: 0.95,
+      pluckGain: 0.72,
+      pluckDecay: 1.4,
+      pluckFilterRatio: 2.7,
+      bowWave: "sawtooth"
+    },
+    organ: {
+      label: "Organ",
+      osc: "square",
+      overtone: "sine",
+      overtoneRatio: 1.5,
+      overtoneGain: 0.035,
+      filterType: "lowpass",
+      filterBase: 3000,
+      filterQ: 0.65,
+      continuousGain: 0.88,
+      pluckGain: 0.62,
+      pluckDecay: 1.8,
+      pluckFilterRatio: 3.0,
+      bowWave: "sine"
+    }
+  };
+
   const config = {
-    scale: "pentatonic",
+    instrument: "organ",
+    scale: "chromatic",
     pitchRange: 12,
     bendRange: 12,
     bendResponse: 55,
     releaseTime: 1.4,
-    keybedTone: true,
+    keybedTone: false,
     rightHumFollowsBend: false,
     showWaves: true,
     showInactive: true,
@@ -68,13 +165,15 @@
     cursor: { x: 0, y: 0 },
     left: { active: false, origin: null, model: null },
     right: { active: false, origin: null, model: null },
-    scroll: { bowUntil: 0, lastDirection: 0, count: 0 },
+    scroll: { bowUntil: 0, lastDirection: 0, lastAt: -Infinity, count: 0, gesture: "idle", bowPosition: 0.5, bowSpeed: 0, bowAttack: 0 },
+    bowStroke: null,
     waves: [],
     log: [],
     lastModel: null,
     lastPluckModel: null,
     lastPointerDownAt: 0,
-    lastPointerUpAt: 0
+    lastPointerUpAt: 0,
+    buttons: { left: false, right: false }
   };
 
   const keyElements = new Map();
@@ -130,22 +229,27 @@
       this.delayGain.gain.setTargetAtTime(delayAmount, now, 0.08);
     }
 
+    preset() {
+      return INSTRUMENT_PRESETS[config.instrument] || INSTRUMENT_PRESETS.electric;
+    }
+
     createVoice(note, channel) {
       const now = this.context.currentTime;
+      const preset = this.preset();
       const osc = this.context.createOscillator();
       const overtone = this.context.createOscillator();
       const gain = this.context.createGain();
       const overtoneGain = this.context.createGain();
       const filter = this.context.createBiquadFilter();
-      osc.type = channel === "bow" ? "triangle" : "sine";
-      overtone.type = "triangle";
+      osc.type = preset.osc;
+      overtone.type = preset.overtone;
       osc.frequency.value = note.frequency;
-      overtone.frequency.value = note.frequency * 2;
+      overtone.frequency.value = note.frequency * preset.overtoneRatio;
       gain.gain.value = 0.0001;
-      overtoneGain.gain.value = 0.045;
-      filter.type = "lowpass";
-      filter.frequency.value = 2200;
-      filter.Q.value = 0.8;
+      overtoneGain.gain.value = preset.overtoneGain;
+      filter.type = preset.filterType;
+      filter.frequency.value = preset.filterBase;
+      filter.Q.value = preset.filterQ;
       osc.connect(filter);
       overtone.connect(overtoneGain);
       overtoneGain.connect(filter);
@@ -154,35 +258,68 @@
       gain.connect(this.delay);
       osc.start(now);
       overtone.start(now);
-      return { osc, overtone, gain, overtoneGain, filter, touched: performance.now() };
+      return { osc, overtone, gain, overtoneGain, filter, presetKey: config.instrument, touched: performance.now() };
     }
 
     setContinuous(channel, notes, options = {}) {
       if (!this.context) return;
       const bank = this.banks[channel];
       const now = this.context.currentTime;
+      const preset = this.preset();
       const liveKeys = new Set();
       const level = options.level || 1;
       const effects = options.effects || [];
+      const idPrefix = options.idPrefix || "";
       const filterActive = effects.some((entry) => entry.effect === "filter");
       const tremoloActive = effects.some((entry) => entry.effect === "tremolo");
-      const filterBase = filterActive ? 900 + (1 - (state.lastModel ? state.lastModel.cursor.yNorm : 0.5)) * 4200 : 2400;
+      const bowPosition = Number.isFinite(options.bowPosition) ? options.bowPosition : 0.5;
+      const bowSpeed = channel === "bow" ? Core.clamp(options.bowSpeed || 0, 0, 1) : 0;
+      const bowTimbre = channel === "bow"
+        ? Core.computeBowTimbre({ direction: options.bowDirection || 0, bowPosition, bowSpeed })
+        : Core.computeBowTimbre();
+      const filterBase = filterActive
+        ? 900 + (1 - (state.lastModel ? state.lastModel.cursor.yNorm : 0.5)) * 4200
+        : preset.filterBase * (channel === "bow" ? bowTimbre.filterMultiplier : 1);
       const tremolo = tremoloActive ? 0.72 + Math.sin(performance.now() / 72) * 0.18 : 1;
 
       notes.slice(0, 10).forEach((note, index) => {
-        const id = `${note.label}:${index}`;
+        const id = `${idPrefix}${note.label}:${index}`;
         liveKeys.add(id);
         let voice = bank.get(id);
         if (!voice) {
           voice = this.createVoice(note, channel);
           bank.set(id, voice);
         }
+        if (voice.presetKey !== config.instrument) {
+          liveKeys.delete(id);
+          voice.gain.gain.setTargetAtTime(0.0001, now, 0.04);
+          try {
+            voice.osc.stop(now + 0.12);
+            voice.overtone.stop(now + 0.12);
+          } catch (_error) {
+            // The oscillator may already be stopped after rapid state changes.
+          }
+          bank.delete(id);
+          voice = this.createVoice(note, channel);
+          bank.set(id, voice);
+          liveKeys.add(id);
+        }
         voice.touched = performance.now();
-        voice.osc.frequency.setTargetAtTime(note.frequency, now, 0.025);
-        voice.overtone.frequency.setTargetAtTime(note.frequency * 2, now, 0.025);
-        voice.filter.frequency.setTargetAtTime(filterBase + note.weight * 1200, now, 0.06);
-        const gainTarget = Math.min(0.16, note.weight * 0.115 * level * tremolo);
-        voice.gain.gain.setTargetAtTime(gainTarget, now, 0.035);
+        const bowFlutter = channel === "bow"
+          ? Math.sin(performance.now() / Math.max(1, bowTimbre.bowFlutterRate) + index * 1.7) * bowTimbre.bowFlutterDepth
+          : 0;
+        const bowedFrequency = note.frequency * (1 + (channel === "bow" ? bowTimbre.frequencySkew + bowFlutter : 0));
+        const bowTime = channel === "bow" ? bowTimbre.attackTime : 0.025;
+        voice.osc.frequency.setTargetAtTime(bowedFrequency, now, bowTime);
+        voice.overtone.frequency.setTargetAtTime(bowedFrequency * preset.overtoneRatio, now, bowTime);
+        voice.overtoneGain.gain.setTargetAtTime(preset.overtoneGain * (channel === "bow" ? bowTimbre.overtoneScale : 1), now, bowTime);
+        const filterTarget = channel === "bow"
+          ? Math.max(500, note.frequency * preset.pluckFilterRatio * bowTimbre.filterMultiplier) + bowTimbre.brightnessHz + note.weight * 420
+          : filterBase + note.weight * 1200;
+        voice.filter.frequency.setTargetAtTime(filterTarget, now, channel === "bow" ? bowTime : 0.08);
+        const gainCeiling = channel === "bow" ? 0.72 : 0.34;
+        const gainTarget = Math.min(gainCeiling, note.weight * 0.115 * level * preset.continuousGain * tremolo * (channel === "bow" ? bowTimbre.gainScale : 1));
+        voice.gain.gain.setTargetAtTime(gainTarget, now, channel === "bow" ? bowTime : 0.035);
       });
 
       for (const [id, voice] of bank) {
@@ -208,25 +345,35 @@
     pluck(notes, energy = 1, effects = []) {
       if (!this.context || notes.length === 0) return;
       const now = this.context.currentTime;
+      const preset = this.preset();
       const delayActive = effects.some((entry) => entry.effect === "delay");
       notes.slice(0, 8).forEach((note) => {
         const osc = this.context.createOscillator();
+        const overtone = this.context.createOscillator();
         const gain = this.context.createGain();
+        const overtoneGain = this.context.createGain();
         const filter = this.context.createBiquadFilter();
-        osc.type = note.role === "resonance" ? "triangle" : "sine";
+        osc.type = note.role === "resonance" ? "triangle" : preset.osc;
+        overtone.type = preset.overtone;
         osc.frequency.value = note.frequency;
-        filter.type = "bandpass";
-        filter.frequency.value = note.frequency * 2.5;
-        filter.Q.value = 2.6;
+        overtone.frequency.value = note.frequency * preset.overtoneRatio;
+        overtoneGain.gain.value = preset.overtoneGain * 0.9;
+        filter.type = preset.filterType === "bandpass" ? "bandpass" : "lowpass";
+        filter.frequency.value = Math.max(500, note.frequency * preset.pluckFilterRatio);
+        filter.Q.value = preset.filterQ + 1.2;
         gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(Math.max(0.003, note.weight * 0.22 * energy), now + 0.012);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + (delayActive ? 1.1 : 0.7));
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.003, note.weight * 0.22 * energy * preset.pluckGain), now + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + (delayActive ? preset.pluckDecay + 0.55 : preset.pluckDecay));
         osc.connect(filter);
+        overtone.connect(overtoneGain);
+        overtoneGain.connect(filter);
         filter.connect(gain);
         gain.connect(this.master);
         gain.connect(this.delay);
         osc.start(now);
-        osc.stop(now + 1.25);
+        overtone.start(now);
+        osc.stop(now + preset.pluckDecay + 0.55);
+        overtone.stop(now + preset.pluckDecay + 0.55);
       });
     }
   }
@@ -291,6 +438,7 @@
   }
 
   function syncConfigFromControls() {
+    config.instrument = controls.instrumentSelect.value;
     config.scale = controls.scaleSelect.value;
     config.pitchRange = Number(controls.pitchRange.value);
     config.bendRange = Number(controls.bendRange.value);
@@ -396,7 +544,7 @@
     const modes = [];
     if (state.left.active) modes.push(`left bend ${model.bend.total.toFixed(1)}st`);
     if (state.right.active) modes.push("right hum");
-    if (performance.now() < state.scroll.bowUntil) modes.push("bowing");
+    if (state.scroll.gesture === "bow" && performance.now() < state.scroll.bowUntil) modes.push(`bow ${(state.scroll.bowPosition * 30).toFixed(0)}/30 v${Math.round(state.scroll.bowSpeed * 100)} a${Math.round(state.scroll.bowAttack * 100)}`);
     if (model.effects.length) modes.push(model.effects.map((entry) => `${entry.key}:${entry.effect}`).join(" "));
     debugState.textContent = `${model.mode} | strings ${model.edges.length} | ${modes.join(" | ") || "idle"}`;
     debugLog.innerHTML = "";
@@ -407,29 +555,117 @@
     });
   }
 
-  function triggerWave(model, strength, direction) {
-    const edge = model.activeEdge ? model.activeEdge.edge : null;
-    state.waves.push({
-      start: performance.now(),
-      edgeId: edge ? edge.id : "field",
-      relation: model.relation,
+  function visualPointForModel(model) {
+    if (model.activeEdge) {
+      return {
+        x: model.activeEdge.projection.x,
+        y: model.activeEdge.projection.y,
+        edge: model.activeEdge.edge,
+        edgeA: model.activeEdge.a,
+        edgeB: model.activeEdge.b,
+        t: model.activeEdge.projection.t
+      };
+    }
+    return {
       x: model.cursor.x,
       y: model.cursor.y,
+      edge: null,
+      edgeA: null,
+      edgeB: null,
+      t: 0.5
+    };
+  }
+
+  function triggerWave(model, strength, direction, kind = "pluck") {
+    const point = visualPointForModel(model);
+    if (kind === "bow") {
+      const existing = state.bowStroke && state.bowStroke.edgeId === (point.edge ? point.edge.id : "field") ? state.bowStroke : null;
+      state.bowStroke = {
+        start: existing ? existing.start : performance.now(),
+        updated: performance.now(),
+        edgeId: point.edge ? point.edge.id : "field",
+        edgeA: point.edgeA,
+        edgeB: point.edgeB,
+        t: point.t,
+        relation: model.relation,
+        x: point.x,
+        y: point.y,
+        strength,
+        direction,
+        position: state.scroll.bowPosition
+      };
+      return;
+    }
+    state.waves.push({
+      start: performance.now(),
+      kind,
+      edgeId: point.edge ? point.edge.id : "field",
+      edgeA: point.edgeA,
+      edgeB: point.edgeB,
+      t: point.t,
+      relation: model.relation,
+      x: point.x,
+      y: point.y,
       strength,
       direction
     });
     state.waves = state.waves.slice(-24);
   }
 
-  function triggerPluck(direction, energy = 1) {
-    const model = currentModel();
+  function triggerPluckWave(model, cursor, strength = 1, direction = 0) {
+    const point = visualPointForModel(model);
+    state.waves.push({
+      start: performance.now(),
+      kind: "pluck",
+      edgeId: point.edge ? point.edge.id : "field",
+      edgeA: point.edgeA,
+      edgeB: point.edgeB,
+      t: point.t,
+      relation: model.relation,
+      x: point.x,
+      y: point.y,
+      cursorX: cursor.x,
+      cursorY: cursor.y,
+      strength,
+      direction
+    });
+    state.waves = state.waves.slice(-24);
+  }
+
+  function triggerPluck(direction, energy = 1, label = "pluck", cursor = state.cursor) {
+    const pluckCursor = { ...cursor };
+    const model = currentModel(pluckCursor);
     state.lastPluckModel = model;
-    triggerWave(model, energy, direction);
+    triggerPluckWave(model, pluckCursor, energy, direction);
     audio.pluck(model.notes, energy, model.effects);
-    state.scroll.lastDirection = direction;
+    logEvent(label, "pluck");
+  }
+
+  function triggerBow(articulation, energy = 1) {
+    const direction = articulation.direction;
+    const model = currentModel();
+    state.scroll.bowUntil = performance.now() + BOW_CONTINUATION_MS;
+    triggerWave(model, energy * 0.45, direction, "bow");
+    logEvent(direction < 0 ? "scroll-up" : "scroll-down", "bow");
+  }
+
+  function handleScrollGesture(deltaY, energy = 1) {
+    const now = performance.now();
+    const articulation = Core.classifyScrollGesture(state.scroll, {
+      deltaY,
+      now,
+      strokeSteps: 30,
+      continuationMs: BOW_CONTINUATION_MS
+    });
+    state.scroll.lastDirection = articulation.direction;
+    state.scroll.lastAt = now;
     state.scroll.count += 1;
-    state.scroll.bowUntil = performance.now() + 220;
-    logEvent(direction < 0 ? "scroll-up" : "scroll-down", energy > 1 ? "bow" : "pluck");
+    state.scroll.gesture = "bow";
+    state.scroll.bowPosition = articulation.bowPosition;
+    state.scroll.bowSpeed = articulation.bowSpeed;
+    state.scroll.bowAttack = articulation.bowAttack;
+    triggerBow(articulation, energy);
+    return { ...articulation, gesture: "bow" };
   }
 
   function updateAudio(model) {
@@ -440,24 +676,24 @@
       audio.stopContinuous("keybed");
     }
 
-    if (state.left.active) {
-      const leftModel = modelForAnchor(state.left.origin, true);
-      state.left.model = leftModel;
-      audio.setContinuous("left", leftModel.notes, { level: 0.95, effects: leftModel.effects });
-    } else {
-      audio.stopContinuous("left");
-    }
+    audio.stopContinuous("left");
 
     if (state.right.active) {
       const rightModel = modelForAnchor(state.right.origin, config.rightHumFollowsBend);
       state.right.model = rightModel;
-      audio.setContinuous("right", rightModel.notes, { level: 0.7, effects: rightModel.effects });
+      audio.setContinuous("right", rightModel.notes, { level: 0.7, effects: rightModel.effects, idPrefix: "right:" });
     } else {
       audio.stopContinuous("right");
     }
 
-    if (performance.now() < state.scroll.bowUntil) {
-      audio.setContinuous("bow", model.notes, { level: 0.6, effects: model.effects });
+    if (state.scroll.gesture === "bow" && performance.now() < state.scroll.bowUntil) {
+      audio.setContinuous("bow", model.notes, {
+        level: 2.2,
+        effects: model.effects,
+        bowDirection: state.scroll.lastDirection,
+        bowPosition: state.scroll.bowPosition,
+        bowSpeed: state.scroll.bowSpeed
+      });
     } else {
       audio.stopContinuous("bow");
     }
@@ -476,7 +712,7 @@
     const ny = dx / len;
     const activeEdge = model.activeEdge && model.activeEdge.edge.id === edge.id;
     const bendAmount = activeEdge ? model.bend.dx * 0.18 + -model.bend.dy * 0.12 : 0;
-    const waveAmount = activeEdge && performance.now() < state.scroll.bowUntil ? Math.sin(time / 65) * 18 : 0;
+    const waveAmount = activeEdge && state.scroll.gesture === "bow" && performance.now() < state.scroll.bowUntil ? Math.sin(time / 65) * 18 : 0;
     const controlX = mx + nx * (bendAmount + waveAmount);
     const controlY = my + ny * (bendAmount + waveAmount);
     const glow = config.glowIntensity / 100;
@@ -513,18 +749,116 @@
     ctx.restore();
   }
 
-  function drawFieldWave(wave, age) {
-    const radius = 18 + age * 0.18;
-    const alpha = Math.max(0, 1 - age / 680) * 0.25;
+  function drawPluckWave(wave, age) {
+    const radius = 8 + age * 0.075;
+    const alpha = Math.max(0, 1 - age / 460) * 0.38;
     ctx.save();
-    ctx.strokeStyle = `rgba(120, 230, 255, ${alpha})`;
-    ctx.lineWidth = 1;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = `rgba(114, 225, 255, ${alpha})`;
+    ctx.fillStyle = `rgba(114, 225, 255, ${alpha * 0.18})`;
+    ctx.shadowColor = `rgba(82, 213, 255, ${alpha})`;
+    ctx.shadowBlur = 18;
     for (let i = 0; i < 3; i += 1) {
+      ctx.lineWidth = i === 0 ? 2 : 1;
       ctx.beginPath();
-      ctx.arc(wave.x, wave.y, radius + i * 18, 0, Math.PI * 2);
+      ctx.arc(wave.x, wave.y, radius + i * 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(wave.x, wave.y, Math.max(3, 8 - age * 0.03), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawRightHumOrigin(now) {
+    if (!state.right.active || !state.right.model) return;
+    const point = state.right.origin || state.right.model.cursor || visualPointForModel(state.right.model);
+    const pulse = (now / 900) % 1;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(255, 145, 64, 0.72)";
+    ctx.fillStyle = "rgba(255, 145, 64, 0.16)";
+    ctx.shadowColor = "rgba(255, 130, 64, 0.55)";
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = 0; i < 3; i += 1) {
+      const radius = 10 + i * 8 + pulse * 5;
+      const alpha = 0.34 - i * 0.08;
+      ctx.strokeStyle = `rgba(255, 150, 70, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
       ctx.stroke();
     }
     ctx.restore();
+  }
+
+  function drawBowStroke(wave, now) {
+    const sinceUpdate = now - wave.updated;
+    const fade = Math.max(0, 1 - sinceUpdate / 560);
+    const a = wave.edgeA;
+    const b = wave.edgeB;
+    if (!a || !b) {
+      drawPluckWave({ ...wave, strength: wave.strength * 0.6 }, sinceUpdate);
+      return;
+    }
+
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.max(1, Math.hypot(dx, dy));
+    const tx = dx / len;
+    const ty = dy / len;
+    const nx = -ty;
+    const ny = tx;
+    const crossSpan = Math.min(220, Math.max(86, len * 0.28));
+    const bowPosition = Number.isFinite(wave.position) ? wave.position : 0.5;
+    const cross = bowPosition - 0.5;
+    const cx = wave.x + nx * cross * crossSpan;
+    const cy = wave.y + ny * cross * crossSpan;
+    const bowLength = Math.min(190, Math.max(82, len * 0.24));
+    const half = bowLength / 2;
+    const wobble = Math.sin(now / 60) * 3;
+    const startX = cx - nx * half + tx * wobble;
+    const startY = cy - ny * half + ty * wobble;
+    const endX = cx + nx * half + tx * wobble;
+    const endY = cy + ny * half + ty * wobble;
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowColor = `rgba(255, 198, 88, ${0.62 * fade})`;
+    ctx.shadowBlur = 20;
+    ctx.strokeStyle = `rgba(255, 206, 96, ${0.84 * fade})`;
+    ctx.lineWidth = 4.2;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = `rgba(255, 238, 170, ${0.54 * fade})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(startX + tx * 8, startY + ty * 8);
+    ctx.lineTo(endX + tx * 8, endY + ty * 8);
+    ctx.stroke();
+
+    ctx.strokeStyle = `rgba(255, 178, 65, ${0.18 * fade})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(startX - tx * 12, startY - ty * 12);
+    ctx.lineTo(endX - tx * 12, endY - ty * 12);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawVisualEvent(wave, age) {
+    if (wave.kind === "bow") {
+      drawBowStroke(wave, performance.now());
+    } else {
+      drawPluckWave(wave, age);
+    }
   }
 
   function draw(time) {
@@ -534,10 +868,16 @@
     const model = currentModel();
     state.lastModel = model;
 
-    state.waves = state.waves.filter((wave) => performance.now() - wave.start < 760);
+    state.waves = state.waves.filter((wave) => performance.now() - wave.start < (wave.kind === "bow" ? 460 : 680));
     for (const wave of state.waves) {
-      drawFieldWave(wave, performance.now() - wave.start);
+      drawVisualEvent(wave, performance.now() - wave.start);
     }
+    if (state.bowStroke && performance.now() - state.bowStroke.updated < 620) {
+      drawBowStroke(state.bowStroke, performance.now());
+    } else if (state.bowStroke) {
+      state.bowStroke = null;
+    }
+    drawRightHumOrigin(performance.now());
 
     for (const edge of model.edges) {
       const activeEdgeId = model.activeEdge ? model.activeEdge.edge.id : null;
@@ -558,7 +898,7 @@
 
     cursorProbe.style.left = `${model.cursor.x}px`;
     cursorProbe.style.top = `${model.cursor.y}px`;
-    cursorProbe.classList.toggle("active", state.left.active || state.right.active || performance.now() < state.scroll.bowUntil);
+    cursorProbe.classList.toggle("active", state.left.active || state.right.active || (state.scroll.gesture === "bow" && performance.now() < state.scroll.bowUntil));
 
     renderDebug(model);
     updateAudio(model);
@@ -602,7 +942,28 @@
     state.modifiers.shift = false;
     state.modifiers.control = false;
     state.modifiers.alt = false;
+    state.buttons.left = false;
+    state.buttons.right = false;
     logEvent("blur");
+  }
+
+  async function startLeftPluck(point, label = "click") {
+    await audio.ensure();
+    state.buttons.left = true;
+    state.cursor = { ...point };
+    state.left.active = true;
+    state.left.origin = { ...point };
+    state.left.model = modelForAnchor(state.left.origin, true);
+    triggerPluck(0, 1, label, point);
+    logEvent("left-down");
+  }
+
+  function endLeftPluck() {
+    state.buttons.left = false;
+    if (!state.left.active) return;
+    state.left.active = false;
+    state.left.origin = null;
+    logEvent("left-up");
   }
 
   function bindEvents() {
@@ -626,10 +987,27 @@
     document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", clearStuckKeys);
+    window.addEventListener("mouseup", (event) => {
+      if (event.button === 0) endLeftPluck();
+      if (event.button === 2) {
+        state.buttons.right = false;
+        if (state.right.active) {
+          state.right.active = false;
+          state.right.origin = null;
+          logEvent("right-up");
+        }
+      }
+    });
 
     stage.addEventListener("contextmenu", (event) => event.preventDefault());
-    stage.addEventListener("pointermove", (event) => {
-      state.cursor = stagePointFromEvent(event);
+    stage.addEventListener("pointermove", async (event) => {
+      const point = stagePointFromEvent(event);
+      state.cursor = point;
+      if ((event.buttons & 1) && !state.buttons.left) {
+        await startLeftPluck(point, state.buttons.right || (event.buttons & 2) ? "chord-click" : "click");
+      } else if (!(event.buttons & 1) && state.buttons.left) {
+        endLeftPluck();
+      }
     });
     stage.addEventListener("pointerdown", async (event) => {
       event.preventDefault();
@@ -639,50 +1017,53 @@
       state.cursor = stagePointFromEvent(event);
       stage.setPointerCapture(event.pointerId);
       if (event.button === 0) {
-        state.left.active = true;
-        state.left.origin = { ...state.cursor };
-        state.left.model = modelForAnchor(state.left.origin, true);
-        triggerWave(state.left.model, 0.72, 0);
-        logEvent("left-down");
+        const clickPoint = stagePointFromEvent(event);
+        await startLeftPluck(clickPoint, state.buttons.right || (event.buttons & 2) ? "chord-click" : "click");
       }
       if (event.button === 2) {
+        state.buttons.right = true;
         state.right.active = true;
         state.right.origin = { ...state.cursor };
         state.right.model = modelForAnchor(state.right.origin, config.rightHumFollowsBend);
-        triggerWave(state.right.model, 0.52, 0);
         logEvent("right-down");
       }
     });
     stage.addEventListener("pointerup", (event) => {
       state.lastPointerUpAt = performance.now();
       if (event.button === 0) {
-        if (!state.left.active) return;
-        state.left.active = false;
-        state.left.origin = null;
-        logEvent("left-up");
+        endLeftPluck();
       }
       if (event.button === 2) {
-        if (!state.right.active) return;
+        state.buttons.right = false;
+        if (!state.right.active || event.buttons & 1) return;
         state.right.active = false;
         state.right.origin = null;
         logEvent("right-up");
       }
     });
     stage.addEventListener("mousedown", async (event) => {
+      if (event.button === 0 && performance.now() - state.lastPointerDownAt >= 80 && !state.buttons.left) {
+        event.preventDefault();
+        stage.focus();
+        const point = stagePointFromEvent(event);
+        await startLeftPluck(point, state.buttons.right || (event.buttons & 2) ? "chord-click" : "click");
+        return;
+      }
       if (event.button !== 2 || performance.now() - state.lastPointerDownAt < 80) return;
       event.preventDefault();
       stage.focus();
       await audio.ensure();
       state.cursor = stagePointFromEvent(event);
+      state.buttons.right = true;
       state.right.active = true;
       state.right.origin = { ...state.cursor };
       state.right.model = modelForAnchor(state.right.origin, config.rightHumFollowsBend);
-      triggerWave(state.right.model, 0.52, 0);
       logEvent("right-down");
     });
     stage.addEventListener("mouseup", (event) => {
       if (event.button !== 2 || performance.now() - state.lastPointerUpAt < 80 || !state.right.active) return;
       event.preventDefault();
+      state.buttons.right = false;
       state.right.active = false;
       state.right.origin = null;
       logEvent("right-up");
@@ -692,15 +1073,16 @@
       state.right.active = false;
       state.left.origin = null;
       state.right.origin = null;
+      state.buttons.left = false;
+      state.buttons.right = false;
       logEvent("pointer-cancel");
     });
     stage.addEventListener("wheel", async (event) => {
       event.preventDefault();
       await audio.ensure();
       state.cursor = stagePointFromEvent(event);
-      const direction = event.deltaY < 0 ? -1 : 1;
       const energy = Math.min(1.7, 0.78 + Math.abs(event.deltaY) / 180);
-      triggerPluck(direction, energy);
+      handleScrollGesture(event.deltaY, energy);
     }, { passive: false });
   }
 
@@ -761,7 +1143,7 @@
         return this.snapshot();
       },
       scroll(deltaY) {
-        triggerPluck(deltaY < 0 ? -1 : 1, 1.1);
+        handleScrollGesture(deltaY, 1.1);
         return this.snapshot();
       },
       setConfig(nextConfig) {
@@ -798,6 +1180,15 @@
           })),
           bend: model.bend,
           effects: model.effects,
+          instrument: config.instrument,
+          scroll: {
+            direction: state.scroll.lastDirection,
+            position: Number(state.scroll.bowPosition.toFixed(3)),
+            index: Math.round(state.scroll.bowPosition * 30),
+            speed: Number(state.scroll.bowSpeed.toFixed(3)),
+            attack: Number(state.scroll.bowAttack.toFixed(3)),
+            gesture: state.scroll.gesture
+          },
           log: state.log.map((entry) => entry.text)
         };
       }
